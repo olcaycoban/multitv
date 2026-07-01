@@ -1,5 +1,9 @@
 node_modules/
 build/
+.next/
+lib/channels.db
+lib/channels.db-shm
+lib/channels.db-wal
 server/channels.db
 server/channels.db-shm
 server/channels.db-wal
