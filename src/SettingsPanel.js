@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import {
   DndContext,
@@ -372,5 +372,6 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
     </>
   );
 
+  if (typeof document === 'undefined') return null;
   return ReactDOM.createPortal(panel, document.body);
 }

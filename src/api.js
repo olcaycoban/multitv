@@ -1,4 +1,5 @@
-const BASE = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001';
+// Next.js API routes are same-origin — no BASE URL needed
+const BASE = '';
 
 export async function fetchChannels(screen = 'main') {
   const res = await fetch(`${BASE}/api/channels?screen=${screen}`);
@@ -31,12 +32,6 @@ export async function deleteChannel(id) {
   if (!res.ok) throw new Error('Failed to delete channel');
 }
 
-export async function runLinkCheck() {
-  const res = await fetch(`${BASE}/api/check-links`, { method: 'POST' });
-  if (!res.ok) throw new Error('Link kontrolü başarısız');
-  return res.json();
-}
-
 export async function reorderChannels(ids) {
   const res = await fetch(`${BASE}/api/channels/reorder`, {
     method: 'PUT',
@@ -44,5 +39,11 @@ export async function reorderChannels(ids) {
     body: JSON.stringify({ ids }),
   });
   if (!res.ok) throw new Error('Failed to reorder channels');
+  return res.json();
+}
+
+export async function runLinkCheck() {
+  const res = await fetch(`${BASE}/api/check-links`, { method: 'POST' });
+  if (!res.ok) throw new Error('Link kontrolü başarısız');
   return res.json();
 }
