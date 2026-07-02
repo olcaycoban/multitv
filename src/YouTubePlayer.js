@@ -73,6 +73,11 @@ export default function YouTubePlayer({ channel }) {
 
   useEffect(() => {
     if (!visible) return;
+    if (!currentVideoIdRef.current) {
+      // Geçerli bir video ID yok (ör. henüz canlı yayın bulunamadı); direkt kurtarma akışına gir.
+      handleBrokenRef.current();
+      return;
+    }
     let destroyed = false;
 
     loadYouTubeIframeApi().then((YT) => {

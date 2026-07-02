@@ -17,6 +17,14 @@ export default async function handler(req, res) {
   const liveId = await findLiveVideoByChannelId(yt_channel_id);
   if (liveId) {
     db.update(id, { source: liveId });
+  } else {
+    // Canlı yayın bulunamadıysa, eski/geçersiz bir source (ör. tür değişiminden
+    // kalma m3u8 linki) kalmışsa temizle; boş bırakmak siyah ekranda takılı
+    // kalmaktan daha güvenli (player 'yayın bulunamadı' durumuna düşer).
+    const current = db.getAll('main').find(c => c.id === id) || db.getAll('bolge').find(c => c.id === id);
+    if (current && current.source && /^https?:\/\//.test(current.source)) {
+      db.update(id, { source: '' });
+    }
   }
 
   const updated = db.getAll('main').find(c => c.id === id)

@@ -275,7 +275,9 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
           }
 
           const ytChanged = isYoutube && orig && (orig.yt_channel_id || '') !== ytId;
-          if (ytChanged) {
+          // Tür HLS -> YouTube'a değiştiyse Channel ID aynı kalmış olsa bile
+          // source alanı hâlâ eski m3u8 linki olabilir; mutlaka tazele.
+          if (isYoutube && ytId && (ytChanged || typeChanged)) {
             const refreshed = await refreshChannel(ch.id, ytId);
             result = refreshed.channel || result;
           } else if (isYoutube && !origIds.has(ch.id)) {
