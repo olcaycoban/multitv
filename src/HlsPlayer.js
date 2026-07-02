@@ -64,10 +64,25 @@ export default function HlsPlayer({ src, name }) {
       lastProgressTime = 0;
 
       if (Hls.isSupported()) {
-        const hls = new Hls({ capLevelToPlayerSize: true, startLevel: 0, liveSyncDuration: 15, maxBufferLength: 20 });
+        // capLevelToPlayerSize KAPALI: aynı anda çok sayıda kanal oynatıldığı için
+        // (bant genişliği kısıtlı) her kutucuk boyutundan bağımsız olarak her zaman
+        // en düşük bitrate'li seviyeye sabitliyoruz (aşağıda autoLevelCapping ile).
+        const hls = new Hls({ capLevelToPlayerSize: false, startLevel: 0, liveSyncDuration: 15, maxBufferLength: 20 });
         hlsRef.current = hls;
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          // Playlist'teki seviye sırası bitrate'e göre artan olmayabilir (ör. 720-480-360-1080-1440
+          // gibi karışık gelebiliyor); bu yüzden index 0 yerine gerçek en düşük bitrate'i buluyoruz.
+          try {
+            if (hls.levels && hls.levels.length > 0) {
+              let minIdx = 0;
+              for (let i = 1; i < hls.levels.length; i++) {
+                if (hls.levels[i].bitrate < hls.levels[minIdx].bitrate) minIdx = i;
+              }
+              hls.autoLevelCapping = minIdx;
+              hls.currentLevel = minIdx;
+            }
+          } catch { /* no-op */ }
           video.play().catch(() => {});
           armStallWatchdog();
         });

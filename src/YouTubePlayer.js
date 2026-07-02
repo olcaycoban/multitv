@@ -139,6 +139,15 @@ export default function YouTubePlayer({ channel }) {
           onReady: (e) => {
             e.target.mute();
             e.target.playVideo();
+            // Aynı anda çok sayıda YouTube akışı oynatıldığı için bant genişliğini
+            // korumak amacıyla en düşük kaliteyi talep ediyoruz.
+            try { e.target.setPlaybackQuality('small'); } catch { /* no-op */ }
+          },
+          onPlaybackQualityChange: (e) => {
+            // YouTube bazen kaliteyi kendiliğinden yükseltebiliyor; düşük tutmaya zorla
+            if (e.data !== 'tiny' && e.data !== 'small') {
+              try { e.target.setPlaybackQuality('small'); } catch { /* no-op */ }
+            }
           },
           onError: (e) => {
             // Hata kodu bozuk/kaldırılmış videoya işaret etse bile API kotasını
