@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import {
   DndContext,
@@ -19,10 +19,12 @@ import { CSS } from '@dnd-kit/utilities';
 import { channelCounts } from './data';
 import { addChannel, updateChannel, deleteChannel, reorderChannels, runLinkCheck, getJobLogs, refreshChannel } from './api';
 
-function SortableRow({ ch, index, isActive, accentColor, onNameChange, onSourceChange, onRemove }) {
+function SortableRow({ ch, index, isActive, accentColor, refreshStatus, onNameChange, onFieldChange, onToggleType, onRefreshOne, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ch.id });
 
   const activeGreen = '#22c55e';
+  const isYoutube = ch.type === 'youtube';
+  const isSaving = refreshStatus === 'saving';
 
   const rowStyle = {
     transform: CSS.Transform.toString(transform),
@@ -41,7 +43,6 @@ function SortableRow({ ch, index, isActive, accentColor, onNameChange, onSourceC
 
   return (
     <div ref={setNodeRef} style={rowStyle}>
-      {/* Drag handle — only this element triggers drag */}
       <span
         {...attributes}
         {...listeners}
@@ -60,11 +61,10 @@ function SortableRow({ ch, index, isActive, accentColor, onNameChange, onSourceC
         ⠿
       </span>
 
-      {/* Active indicator number */}
       <span style={{
         fontSize: 10,
         color: isActive ? activeGreen : 'rgba(255,255,255,0.2)',
-        width: 18,
+        width: 16,
         textAlign: 'right',
         flexShrink: 0,
         fontWeight: isActive ? 700 : 400,
@@ -73,7 +73,7 @@ function SortableRow({ ch, index, isActive, accentColor, onNameChange, onSourceC
       </span>
 
       <input
-        style={{ flex: 1, background: '#1e1e1e', border: '1px solid #2a2a2a', color: 'rgba(255,255,255,0.9)', fontSize: 11, padding: '6px 8px', borderRadius: 3, outline: 'none' }}
+        style={{ flex: 1, minWidth: 0, background: '#1e1e1e', border: '1px solid #2a2a2a', color: 'rgba(255,255,255,0.9)', fontSize: 11, padding: '6px 8px', borderRadius: 3, outline: 'none' }}
         placeholder="Kanal adı"
         value={ch.name}
         onChange={e => onNameChange(e.target.value)}
@@ -81,21 +81,55 @@ function SortableRow({ ch, index, isActive, accentColor, onNameChange, onSourceC
         onBlur={e => (e.target.style.borderColor = '#2a2a2a')}
       />
 
-      <input
-        style={{ flex: 1.6, background: '#1e1e1e', border: '1px solid #2a2a2a', color: 'rgba(255,255,255,0.9)', fontSize: 11, padding: '6px 8px', borderRadius: 3, outline: 'none', fontFamily: 'monospace' }}
-        placeholder="YouTube ID veya m3u8 URL"
-        value={ch.source}
-        onChange={e => onSourceChange(e.target.value)}
-        onFocus={e => (e.target.style.borderColor = accentColor)}
-        onBlur={e => (e.target.style.borderColor = '#2a2a2a')}
-      />
+      {isYoutube ? (
+        <input
+          style={{ flex: 1.4, minWidth: 0, background: '#1e1e1e', border: '1px solid #2a2a2a', color: 'rgba(255,255,255,0.9)', fontSize: 10, padding: '6px 8px', borderRadius: 3, outline: 'none', fontFamily: 'monospace' }}
+          placeholder="Kanal ID (UC…)"
+          value={ch.yt_channel_id || ''}
+          onChange={e => onFieldChange('yt_channel_id', e.target.value)}
+          onFocus={e => (e.target.style.borderColor = accentColor)}
+          onBlur={e => (e.target.style.borderColor = '#2a2a2a')}
+        />
+      ) : (
+        <input
+          style={{ flex: 1.4, minWidth: 0, background: '#1e1e1e', border: '1px solid #2a2a2a', color: 'rgba(255,255,255,0.9)', fontSize: 11, padding: '6px 8px', borderRadius: 3, outline: 'none', fontFamily: 'monospace' }}
+          placeholder="m3u8 URL"
+          value={ch.source || ''}
+          onChange={e => onFieldChange('source', e.target.value)}
+          onFocus={e => (e.target.style.borderColor = accentColor)}
+          onBlur={e => (e.target.style.borderColor = '#2a2a2a')}
+        />
+      )}
 
-      <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', width: 26, textAlign: 'center', flexShrink: 0 }}>
-        {ch.type === 'hls' ? 'HLS' : 'YT'}
-      </span>
+      {isYoutube && (
+        <>
+          <span style={{ width: 16, textAlign: 'center', fontSize: 12, flexShrink: 0 }} title="Canlı link durumu">
+            {refreshStatus === 'ok' && '✅'}
+            {refreshStatus === 'notfound' && '⚠️'}
+            {refreshStatus === 'error' && '❌'}
+            {!refreshStatus && ch.yt_channel_id && ch.source && '🔗'}
+          </span>
+          <button
+            style={{ background: 'transparent', border: 'none', color: isSaving ? 'rgba(255,255,255,0.2)' : '#7eb8f7', fontSize: 13, cursor: isSaving ? 'not-allowed' : 'pointer', padding: '0 3px', lineHeight: 1, flexShrink: 0 }}
+            onClick={onRefreshOne}
+            disabled={isSaving || !ch.yt_channel_id || ch._new}
+            title={ch._new ? 'Önce kaydedin' : 'Canlı linki şimdi yenile'}
+          >
+            {isSaving ? '⏳' : '⟳'}
+          </button>
+        </>
+      )}
 
       <button
-        style={{ background: 'transparent', border: 'none', color: 'rgba(255,80,80,0.5)', fontSize: 18, cursor: 'pointer', padding: '0 4px', lineHeight: 1 }}
+        style={{ background: '#1e1e1e', border: '1px solid #2a2a2a', color: 'rgba(255,255,255,0.4)', fontSize: 9, cursor: 'pointer', padding: '4px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 700 }}
+        onClick={onToggleType}
+        title="Tür değiştir"
+      >
+        {isYoutube ? 'YT' : 'HLS'}
+      </button>
+
+      <button
+        style={{ background: 'transparent', border: 'none', color: 'rgba(255,80,80,0.5)', fontSize: 18, cursor: 'pointer', padding: '0 4px', lineHeight: 1, flexShrink: 0 }}
         onClick={onRemove}
         title="Sil"
       >×</button>
@@ -109,20 +143,12 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState(null);
   const [jobLogs, setJobLogs] = useState([]);
-  const [ytTab, setYtTab] = useState(false);
-  const [ytDraft, setYtDraft] = useState({});   // { channelDbId: yt_channel_id string }
-  const [ytStatus, setYtStatus] = useState({}); // { channelDbId: 'saving'|'ok'|'notfound'|'error' }
+  const [refreshStatus, setRefreshStatus] = useState({}); // { channelId: 'saving'|'ok'|'notfound'|'error' }
 
   useEffect(() => {
     if (isOpen) {
       setDraft(channels.map(ch => ({ ...ch })));
-      // YouTube kanallarının mevcut yt_channel_id'lerini yükle
-      const map = {};
-      channels.filter(c => c.type === 'youtube').forEach(c => {
-        map[c.id] = c.yt_channel_id || '';
-      });
-      setYtDraft(map);
-      // Job loglarını yükle
+      setRefreshStatus({});
       getJobLogs().then(setJobLogs).catch(() => {});
     }
   }, [isOpen]); // intentionally omit `channels` to only reset draft when panel opens
@@ -146,9 +172,17 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
   const updateName = (id, val) =>
     setDraft(prev => prev.map(ch => ch.id === id ? { ...ch, name: val } : ch));
 
-  const updateSource = (id, val) => {
-    const isHls = val.includes('.m3u8') || (val.startsWith('http') && !val.includes('youtu'));
-    setDraft(prev => prev.map(ch => ch.id === id ? { ...ch, source: val, type: isHls ? 'hls' : 'youtube' } : ch));
+  const updateField = (id, field, val) =>
+    setDraft(prev => prev.map(ch => ch.id === id ? { ...ch, [field]: val } : ch));
+
+  const toggleType = (id) => {
+    setDraft(prev => prev.map(ch => {
+      if (ch.id !== id) return ch;
+      const nextType = ch.type === 'youtube' ? 'hls' : 'youtube';
+      return nextType === 'hls'
+        ? { ...ch, type: nextType, source: '' }
+        : { ...ch, type: nextType, yt_channel_id: ch.yt_channel_id || '' };
+    }));
   };
 
   const handleCheckLinks = async () => {
@@ -163,7 +197,6 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
           return fix ? { ...ch, source: fix.new } : ch;
         }));
       }
-      // Logları güncelle
       getJobLogs().then(setJobLogs).catch(() => {});
     } catch (err) {
       setCheckResult({ error: err.message });
@@ -172,30 +205,25 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
     }
   };
 
+  // Tek bir kayıtlı kanalın canlı linkini anında yenile (mimari: sadece bozulan/istenen kanal için API çağrısı)
   const handleRefreshOne = async (ch) => {
-    const ytId = (ytDraft[ch.id] || '').trim();
-    if (!ytId) return;
-    setYtStatus(s => ({ ...s, [ch.id]: 'saving' }));
+    const ytId = (ch.yt_channel_id || '').trim();
+    if (!ytId || ch._new) return;
+    setRefreshStatus(s => ({ ...s, [ch.id]: 'saving' }));
     try {
       const result = await refreshChannel(ch.id, ytId);
-      setYtStatus(s => ({ ...s, [ch.id]: result.liveId ? 'ok' : 'notfound' }));
-      // Kanalın source'unu state'de güncelle (kalıcı)
+      setRefreshStatus(s => ({ ...s, [ch.id]: result.liveId ? 'ok' : 'notfound' }));
       if (result.channel) {
-        onChannelsUpdate(prev => prev.map(c => c.id === ch.id ? result.channel : c));
         setDraft(prev => prev.map(c => c.id === ch.id ? { ...c, source: result.channel.source, yt_channel_id: result.channel.yt_channel_id } : c));
+        onChannelsUpdate(prev => prev.map(c => c.id === ch.id ? result.channel : c));
       }
     } catch {
-      setYtStatus(s => ({ ...s, [ch.id]: 'error' }));
+      setRefreshStatus(s => ({ ...s, [ch.id]: 'error' }));
     }
   };
 
-  const handleRefreshAll = async () => {
-    const ytChannels = channels.filter(c => c.type === 'youtube' && (ytDraft[c.id] || '').trim());
-    for (const ch of ytChannels) await handleRefreshOne(ch);
-  };
-
   const handleAdd = () => {
-    setDraft(prev => [...prev, { id: `new-${Date.now()}`, name: '', source: '', type: 'youtube', screen: screen || 'main', _new: true }]);
+    setDraft(prev => [...prev, { id: `new-${Date.now()}`, name: '', source: '', type: 'youtube', yt_channel_id: '', screen: screen || 'main', _new: true }]);
   };
 
   const handleRemove = (id) => {
@@ -214,18 +242,45 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
 
       const savedChannels = [];
       for (const ch of draft) {
-        if (!ch.source.trim()) continue;
+        const isYoutube = ch.type === 'youtube';
+        const ytId = (ch.yt_channel_id || '').trim();
+        if (isYoutube && !ytId) continue;       // YouTube kanalı Channel ID olmadan kaydedilmez
+        if (!isYoutube && !ch.source.trim()) continue; // HLS kanalı m3u8 olmadan kaydedilmez
+
         if (ch._new) {
-          const created = await addChannel({ name: ch.name, source: ch.source, type: ch.type, screen: screen || 'main' });
-          savedChannels.push(created);
+          const created = await addChannel({ name: ch.name, source: isYoutube ? '' : ch.source, type: ch.type, screen: screen || 'main' });
+          if (isYoutube) {
+            const refreshed = await refreshChannel(created.id, ytId);
+            savedChannels.push(refreshed.channel || created);
+          } else {
+            savedChannels.push(created);
+          }
         } else {
           const orig = channels.find(c => c.id === ch.id);
-          if (orig && (orig.name !== ch.name || orig.source !== ch.source || orig.type !== ch.type)) {
-            const updated = await updateChannel(ch.id, { name: ch.name, source: ch.source, type: ch.type });
-            savedChannels.push(updated);
-          } else if (origIds.has(ch.id)) {
-            savedChannels.push(ch);
+          let result = orig;
+
+          const nameChanged = orig && orig.name !== ch.name;
+          const typeChanged = orig && orig.type !== ch.type;
+          const hlsSourceChanged = !isYoutube && orig && orig.source !== ch.source;
+
+          if (nameChanged || typeChanged || hlsSourceChanged) {
+            result = await updateChannel(ch.id, {
+              name: ch.name,
+              type: ch.type,
+              ...(!isYoutube ? { source: ch.source } : {}),
+            });
           }
+
+          const ytChanged = isYoutube && orig && (orig.yt_channel_id || '') !== ytId;
+          if (ytChanged) {
+            const refreshed = await refreshChannel(ch.id, ytId);
+            result = refreshed.channel || result;
+          } else if (isYoutube && !origIds.has(ch.id)) {
+            // olağandışı durum, yine de mevcut draft'ı koru
+            result = ch;
+          }
+
+          savedChannels.push(result || ch);
         }
       }
 
@@ -258,7 +313,7 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
       <aside
         style={{
           position: 'fixed', top: 0, right: 0, height: '100%',
-          width: 500, maxWidth: '95vw',
+          width: 520, maxWidth: '95vw',
           background: '#0f0f0f',
           borderLeft: '1px solid #1e1e1e',
           zIndex: 9999,
@@ -300,7 +355,8 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
             </span>
           </div>
           <p className="section-hint">
-            Sol kenardan tutup sürükleyerek sıralayın. YouTube için video ID'si, HLS için .m3u8 adresi girin.
+            YouTube kanalları için sadece <b>Kanal ID</b>'sini girin (UC…) — canlı yayın linki otomatik bulunur.
+            HLS kanalları için doğrudan m3u8 adresini girin. Sağdaki <b>YT/HLS</b> düğmesiyle tür değiştirebilirsiniz.
           </p>
 
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -312,8 +368,11 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
                   index={i}
                   isActive={i < channelCount}
                   accentColor={accentColor}
+                  refreshStatus={refreshStatus[ch.id]}
                   onNameChange={(val) => updateName(ch.id, val)}
-                  onSourceChange={(val) => updateSource(ch.id, val)}
+                  onFieldChange={(field, val) => updateField(ch.id, field, val)}
+                  onToggleType={() => toggleType(ch.id)}
+                  onRefreshOne={() => handleRefreshOne(ch)}
                   onRemove={() => handleRemove(ch.id)}
                 />
               ))}
@@ -335,73 +394,6 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
             {saving ? 'Kaydediliyor…' : 'Kaydet'}
           </button>
 
-          {/* YouTube Kanal ID'leri */}
-          <div style={{ marginTop: 24, borderTop: '1px solid #1e1e1e', paddingTop: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <p className="section-title" style={{ margin: 0 }}>YouTube Kanal ID'leri</p>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {ytTab && (
-                  <button
-                    style={{ padding: '4px 10px', background: '#1a2a1a', border: '1px solid #2a4a2a', color: '#4ade80', fontSize: 10, cursor: 'pointer', borderRadius: 3, fontWeight: 700 }}
-                    onClick={handleRefreshAll}
-                  >
-                    ⟳ Tümünü Güncelle
-                  </button>
-                )}
-                <button
-                  style={{ padding: '4px 10px', background: 'transparent', border: '1px solid #333', color: 'rgba(255,255,255,0.5)', fontSize: 10, cursor: 'pointer', borderRadius: 3 }}
-                  onClick={() => setYtTab(v => !v)}
-                >
-                  {ytTab ? '▲ Gizle' : '▼ Göster'}
-                </button>
-              </div>
-            </div>
-            {ytTab && (
-              <>
-                <p className="section-hint" style={{ marginBottom: 8 }}>
-                  Channel ID gir → Güncelle → sistem canlı yayın linkini otomatik bulur ve kaydeder.
-                  <br />Bulmak için: <span style={{ fontFamily: 'monospace', fontSize: 10 }}>commentpicker.com/youtube-channel-id.php</span>
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
-                  {channels.filter(c => c.type === 'youtube').map(ch => {
-                    const status = ytStatus[ch.id];
-                    const isSaving = status === 'saving';
-                    return (
-                      <div key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#161616', padding: '4px 6px', borderRadius: 4 }}>
-                        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', width: 110, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.name}</span>
-                        <input
-                          style={{ flex: 1, background: '#1e1e1e', border: '1px solid #2a2a2a', color: 'rgba(255,255,255,0.85)', fontSize: 10, padding: '5px 8px', borderRadius: 3, outline: 'none', fontFamily: 'monospace' }}
-                          placeholder="UC… (Channel ID)"
-                          value={ytDraft[ch.id] ?? (ch.yt_channel_id || '')}
-                          onChange={e => setYtDraft(prev => ({ ...prev, [ch.id]: e.target.value }))}
-                          onFocus={e => (e.target.style.borderColor = accentColor)}
-                          onBlur={e => (e.target.style.borderColor = '#2a2a2a')}
-                        />
-                        {/* Durum göstergesi */}
-                        <span style={{ width: 16, textAlign: 'center', fontSize: 12, flexShrink: 0 }}>
-                          {status === 'ok' && '✅'}
-                          {status === 'notfound' && '⚠️'}
-                          {status === 'error' && '❌'}
-                          {!status && ch.yt_channel_id && '🔗'}
-                        </span>
-                        <button
-                          style={{ padding: '4px 8px', background: isSaving ? '#111' : '#1a1a2e', border: '1px solid #333', color: isSaving ? 'rgba(255,255,255,0.3)' : '#7eb8f7', fontSize: 10, cursor: isSaving ? 'not-allowed' : 'pointer', borderRadius: 3, flexShrink: 0, fontWeight: 600 }}
-                          onClick={() => handleRefreshOne(ch)}
-                          disabled={isSaving || !(ytDraft[ch.id] ?? ch.yt_channel_id)}
-                        >
-                          {isSaving ? '⏳' : '⟳ Güncelle'}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', margin: 0 }}>
-                  🔗 = kayıtlı ID var &nbsp;|&nbsp; ✅ = canlı link güncellendi &nbsp;|&nbsp; ⚠️ = canlı yayın bulunamadı
-                </p>
-              </>
-            )}
-          </div>
-
           {/* Link Kontrolü */}
           <div style={{ marginTop: 24, borderTop: '1px solid #1e1e1e', paddingTop: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -415,7 +407,8 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
               </button>
             </div>
             <p className="section-hint" style={{ marginBottom: 8 }}>
-              Tüm kanalları test eder, bozuk YouTube linklerini otomatik günceller. Her 30 dakikada bir otomatik çalışır.
+              Her kanalın mevcut linkinin canlı olup olmadığını kontrol eder (ucuz). Sadece bozuk çıkan kanal için
+              o kanalın Channel ID'si üzerinden yeni canlı yayın aranır ve otomatik günceller. 30 dakikada bir otomatik çalışır.
             </p>
 
             {checking && (
@@ -438,7 +431,7 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
                 ))}
                 {checkResult.unfixable?.length > 0 && (
                   <div style={{ marginTop: 6 }}>
-                    <span style={{ color: '#f87171', fontWeight: 600 }}>Manuel güncelleme gerekli: </span>
+                    <span style={{ color: '#f87171', fontWeight: 600 }}>Manuel müdahale gerekli: </span>
                     <span style={{ color: '#f87171' }}>{checkResult.unfixable.join(', ')}</span>
                   </div>
                 )}
