@@ -35,8 +35,14 @@ export default function YouTubePlayer({ channel }) {
       .then((result) => {
         const newId = result?.channel?.source;
         if (newId && playerRef.current?.loadVideoById) {
-          currentVideoIdRef.current = newId;
-          playerRef.current.loadVideoById(newId);
+          // Aynı video ID döndüyse (yayın hiç değişmemiş, sadece geçici bir blip
+          // yaşanmış) reload yerine basitçe devam ettirmek yeterli.
+          if (newId === currentVideoIdRef.current) {
+            playerRef.current.playVideo();
+          } else {
+            currentVideoIdRef.current = newId;
+            playerRef.current.loadVideoById(newId);
+          }
           setStatus('idle');
           fixAttemptsRef.current = 0;
           fixingRef.current = false;
@@ -110,13 +116,21 @@ export default function YouTubePlayer({ channel }) {
                 }
               }, 600);
             }
-            // ENDED (0) bazen geçici bir durum blip'i olabilir (tampon/kalite geçişi).
-            // Birkaç saniye sonra hâlâ ENDED ise gerçekten yayın bitmiş demektir.
+            // ENDED (0) çoğunlukla geçici bir durum blip'i (tampon/kalite geçişi),
+            // yayın gerçekten bitmiş değil. YouTube API'ye gitmeden önce önce
+            // basitçe devam ettirmeyi dene; sadece bu da işe yaramazsa gerçek
+            // arıza kabul edip API'yi tetikle.
             if (e.data === YT.PlayerState.ENDED) {
               setTimeout(() => {
                 const player = playerRef.current;
                 if (player?.getPlayerState && player.getPlayerState() === YT.PlayerState.ENDED) {
-                  handleBrokenRef.current();
+                  player.playVideo();
+                  setTimeout(() => {
+                    const p = playerRef.current;
+                    if (p?.getPlayerState && p.getPlayerState() === YT.PlayerState.ENDED) {
+                      handleBrokenRef.current();
+                    }
+                  }, 3000);
                 }
               }, 4000);
             }
