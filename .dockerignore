@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+.env
+.env.local
+lib/channels.db
+lib/channels.db-shm
+lib/channels.db-wal
+server
+.DS_Store
+npm-debug.log*
