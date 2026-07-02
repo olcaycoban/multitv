@@ -81,12 +81,30 @@ export default function YouTubePlayer({ channel }) {
       playerRef.current = new YT.Player(elementIdRef.current, {
         videoId: currentVideoIdRef.current,
         host: 'https://www.youtube-nocookie.com',
-        playerVars: { autoplay: 1, mute: 1, playsinline: 1, rel: 0, modestbranding: 1 },
+        playerVars: {
+          autoplay: 1, mute: 1, playsinline: 1, rel: 0, modestbranding: 1,
+          controls: 0, disablekb: 1, fs: 0, iv_load_policy: 3,
+        },
         events: {
+          // autoplay parametresi tek başına bazı tarayıcılarda yeterli olmuyor,
+          // player hazır olduğunda oynatmayı açıkça tetikliyoruz.
+          onReady: (e) => {
+            e.target.mute();
+            e.target.playVideo();
+          },
           onError: (e) => {
             if (BROKEN_ERROR_CODES.has(e.data)) handleBrokenRef.current();
           },
           onStateChange: (e) => {
+            // Kiosk modu: video hiçbir zaman durmamalı, duraklarsa hemen devam ettir
+            if (e.data === YT.PlayerState.PAUSED) {
+              setTimeout(() => {
+                const player = playerRef.current;
+                if (player?.getPlayerState && player.getPlayerState() === YT.PlayerState.PAUSED) {
+                  player.playVideo();
+                }
+              }, 600);
+            }
             // ENDED (0) bazen geçici bir durum blip'i olabilir (tampon/kalite geçişi).
             // Birkaç saniye sonra hâlâ ENDED ise gerçekten yayın bitmiş demektir.
             if (e.data === YT.PlayerState.ENDED) {
