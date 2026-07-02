@@ -17,7 +17,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { channelCounts } from './data';
-import { addChannel, updateChannel, deleteChannel, reorderChannels, runLinkCheck, getJobLogs, updateChannelYtId } from './api';
+import { addChannel, updateChannel, deleteChannel, reorderChannels, runLinkCheck, getJobLogs, refreshChannel } from './api';
 
 function SortableRow({ ch, index, isActive, accentColor, onNameChange, onSourceChange, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ch.id });
@@ -109,9 +109,9 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState(null);
   const [jobLogs, setJobLogs] = useState([]);
-  const [ytTab, setYtTab] = useState(false); // YouTube Kanal ID paneli açık mı
-  const [ytDraft, setYtDraft] = useState({}); // { channelId: yt_channel_id }
-  const [ytSaving, setYtSaving] = useState(false);
+  const [ytTab, setYtTab] = useState(false);
+  const [ytDraft, setYtDraft] = useState({});   // { channelDbId: yt_channel_id string }
+  const [ytStatus, setYtStatus] = useState({}); // { channelDbId: 'saving'|'ok'|'notfound'|'error' }
 
   useEffect(() => {
     if (isOpen) {
@@ -172,21 +172,26 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
     }
   };
 
-  const handleSaveYtIds = async () => {
-    setYtSaving(true);
+  const handleRefreshOne = async (ch) => {
+    const ytId = (ytDraft[ch.id] || '').trim();
+    if (!ytId) return;
+    setYtStatus(s => ({ ...s, [ch.id]: 'saving' }));
     try {
-      const ytChannels = channels.filter(c => c.type === 'youtube');
-      for (const ch of ytChannels) {
-        const newId = ytDraft[ch.id] ?? '';
-        if (newId !== (ch.yt_channel_id || '')) {
-          await updateChannelYtId(ch.id, newId || null);
-        }
+      const result = await refreshChannel(ch.id, ytId);
+      setYtStatus(s => ({ ...s, [ch.id]: result.liveId ? 'ok' : 'notfound' }));
+      // Kanalın source'unu state'de güncelle (kalıcı)
+      if (result.channel) {
+        onChannelsUpdate(prev => prev.map(c => c.id === ch.id ? result.channel : c));
+        setDraft(prev => prev.map(c => c.id === ch.id ? { ...c, source: result.channel.source, yt_channel_id: result.channel.yt_channel_id } : c));
       }
-    } catch (err) {
-      alert('Kaydetme hatası: ' + err.message);
-    } finally {
-      setYtSaving(false);
+    } catch {
+      setYtStatus(s => ({ ...s, [ch.id]: 'error' }));
     }
+  };
+
+  const handleRefreshAll = async () => {
+    const ytChannels = channels.filter(c => c.type === 'youtube' && (ytDraft[c.id] || '').trim());
+    for (const ch of ytChannels) await handleRefreshOne(ch);
   };
 
   const handleAdd = () => {
@@ -334,41 +339,65 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
           <div style={{ marginTop: 24, borderTop: '1px solid #1e1e1e', paddingTop: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
               <p className="section-title" style={{ margin: 0 }}>YouTube Kanal ID'leri</p>
-              <button
-                style={{ padding: '4px 10px', background: 'transparent', border: '1px solid #333', color: 'rgba(255,255,255,0.5)', fontSize: 10, cursor: 'pointer', borderRadius: 3 }}
-                onClick={() => setYtTab(v => !v)}
-              >
-                {ytTab ? '▲ Gizle' : '▼ Göster'}
-              </button>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {ytTab && (
+                  <button
+                    style={{ padding: '4px 10px', background: '#1a2a1a', border: '1px solid #2a4a2a', color: '#4ade80', fontSize: 10, cursor: 'pointer', borderRadius: 3, fontWeight: 700 }}
+                    onClick={handleRefreshAll}
+                  >
+                    ⟳ Tümünü Güncelle
+                  </button>
+                )}
+                <button
+                  style={{ padding: '4px 10px', background: 'transparent', border: '1px solid #333', color: 'rgba(255,255,255,0.5)', fontSize: 10, cursor: 'pointer', borderRadius: 3 }}
+                  onClick={() => setYtTab(v => !v)}
+                >
+                  {ytTab ? '▲ Gizle' : '▼ Göster'}
+                </button>
+              </div>
             </div>
             {ytTab && (
               <>
-                <p className="section-hint">
-                  Her YouTube kanalına ait Channel ID'yi girin (örn: UCBi2mrWuNuyYy4gbM6fU18Q). Boş bırakılırsa otomatik çözülmeye çalışılır.
-                  <br />Kanal ID'sini bulmak için: youtube.com/@HANDLE → sayfa kaynağında "channelId" ara.
+                <p className="section-hint" style={{ marginBottom: 8 }}>
+                  Channel ID gir → Güncelle → sistem canlı yayın linkini otomatik bulur ve kaydeder.
+                  <br />Bulmak için: <span style={{ fontFamily: 'monospace', fontSize: 10 }}>commentpicker.com/youtube-channel-id.php</span>
                 </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
-                  {channels.filter(c => c.type === 'youtube').map(ch => (
-                    <div key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#161616', padding: '4px 8px', borderRadius: 4 }}>
-                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', width: 120, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.name}</span>
-                      <input
-                        style={{ flex: 1, background: '#1e1e1e', border: '1px solid #2a2a2a', color: 'rgba(255,255,255,0.8)', fontSize: 10, padding: '5px 8px', borderRadius: 3, outline: 'none', fontFamily: 'monospace' }}
-                        placeholder="UC..."
-                        value={ytDraft[ch.id] || ''}
-                        onChange={e => setYtDraft(prev => ({ ...prev, [ch.id]: e.target.value }))}
-                        onFocus={e => (e.target.style.borderColor = accentColor)}
-                        onBlur={e => (e.target.style.borderColor = '#2a2a2a')}
-                      />
-                    </div>
-                  ))}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+                  {channels.filter(c => c.type === 'youtube').map(ch => {
+                    const status = ytStatus[ch.id];
+                    const isSaving = status === 'saving';
+                    return (
+                      <div key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#161616', padding: '4px 6px', borderRadius: 4 }}>
+                        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', width: 110, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.name}</span>
+                        <input
+                          style={{ flex: 1, background: '#1e1e1e', border: '1px solid #2a2a2a', color: 'rgba(255,255,255,0.85)', fontSize: 10, padding: '5px 8px', borderRadius: 3, outline: 'none', fontFamily: 'monospace' }}
+                          placeholder="UC… (Channel ID)"
+                          value={ytDraft[ch.id] ?? (ch.yt_channel_id || '')}
+                          onChange={e => setYtDraft(prev => ({ ...prev, [ch.id]: e.target.value }))}
+                          onFocus={e => (e.target.style.borderColor = accentColor)}
+                          onBlur={e => (e.target.style.borderColor = '#2a2a2a')}
+                        />
+                        {/* Durum göstergesi */}
+                        <span style={{ width: 16, textAlign: 'center', fontSize: 12, flexShrink: 0 }}>
+                          {status === 'ok' && '✅'}
+                          {status === 'notfound' && '⚠️'}
+                          {status === 'error' && '❌'}
+                          {!status && ch.yt_channel_id && '🔗'}
+                        </span>
+                        <button
+                          style={{ padding: '4px 8px', background: isSaving ? '#111' : '#1a1a2e', border: '1px solid #333', color: isSaving ? 'rgba(255,255,255,0.3)' : '#7eb8f7', fontSize: 10, cursor: isSaving ? 'not-allowed' : 'pointer', borderRadius: 3, flexShrink: 0, fontWeight: 600 }}
+                          onClick={() => handleRefreshOne(ch)}
+                          disabled={isSaving || !(ytDraft[ch.id] ?? ch.yt_channel_id)}
+                        >
+                          {isSaving ? '⏳' : '⟳ Güncelle'}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
-                <button
-                  style={{ width: '100%', padding: 8, background: '#1a2a1a', border: '1px solid #2a4a2a', color: '#4ade80', fontSize: 11, fontWeight: 700, cursor: ytSaving ? 'not-allowed' : 'pointer', borderRadius: 3, opacity: ytSaving ? 0.6 : 1 }}
-                  onClick={handleSaveYtIds}
-                  disabled={ytSaving}
-                >
-                  {ytSaving ? 'Kaydediliyor…' : '💾 Kanal ID\'lerini Kaydet'}
-                </button>
+                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', margin: 0 }}>
+                  🔗 = kayıtlı ID var &nbsp;|&nbsp; ✅ = canlı link güncellendi &nbsp;|&nbsp; ⚠️ = canlı yayın bulunamadı
+                </p>
               </>
             )}
           </div>

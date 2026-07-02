@@ -54,6 +54,16 @@ export async function getJobLogs() {
   return res.json();
 }
 
+export async function refreshChannel(id, yt_channel_id) {
+  const res = await fetch(`${BASE}/api/channels/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, yt_channel_id }),
+  });
+  if (!res.ok) throw new Error('Güncelleme başarısız');
+  return res.json();
+}
+
 export async function updateChannelYtId(id, yt_channel_id) {
   const res = await fetch(`${BASE}/api/channels/${id}`, {
     method: 'PATCH',
