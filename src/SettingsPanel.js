@@ -17,7 +17,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { channelCounts } from './data';
-import { addChannel, updateChannel, deleteChannel, reorderChannels, runLinkCheck, getJobLogs, refreshChannel } from './api';
+import { addChannel, updateChannel, deleteChannel, reorderChannels, refreshChannel } from './api';
 
 function SortableRow({ ch, index, isActive, accentColor, refreshStatus, onNameChange, onFieldChange, onToggleType, onRefreshOne, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ch.id });
@@ -143,16 +143,12 @@ function SortableRow({ ch, index, isActive, accentColor, refreshStatus, onNameCh
 export default function SettingsPanel({ isOpen, onClose, channelCount, onCountChange, channels, onChannelsUpdate, onFullscreen, accentColor, screen }) {
   const [draft, setDraft] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [checkResult, setCheckResult] = useState(null);
-  const [jobLogs, setJobLogs] = useState([]);
   const [refreshStatus, setRefreshStatus] = useState({}); // { channelId: 'saving'|'ok'|'notfound'|'error' }
 
   useEffect(() => {
     if (isOpen) {
       setDraft(channels.map(ch => ({ ...ch })));
       setRefreshStatus({});
-      getJobLogs().then(setJobLogs).catch(() => {});
     }
   }, [isOpen]); // intentionally omit `channels` to only reset draft when panel opens
 
@@ -186,26 +182,6 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
         ? { ...ch, type: nextType, source: '' }
         : { ...ch, type: nextType, yt_channel_id: ch.yt_channel_id || '' };
     }));
-  };
-
-  const handleCheckLinks = async () => {
-    setChecking(true);
-    setCheckResult(null);
-    try {
-      const result = await runLinkCheck();
-      setCheckResult(result);
-      if (result.fixed && result.fixed.length > 0) {
-        setDraft(prev => prev.map(ch => {
-          const fix = result.fixed.find(f => f.name === ch.name);
-          return fix ? { ...ch, source: fix.new } : ch;
-        }));
-      }
-      getJobLogs().then(setJobLogs).catch(() => {});
-    } catch (err) {
-      setCheckResult({ error: err.message });
-    } finally {
-      setChecking(false);
-    }
   };
 
   // Tek bir kayıtlı kanalın canlı linkini anında yenile (mimari: sadece bozulan/istenen kanal için API çağrısı)
@@ -398,76 +374,6 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
           >
             {saving ? 'Kaydediliyor…' : 'Kaydet'}
           </button>
-
-          {/* Link Kontrolü */}
-          <div style={{ marginTop: 24, borderTop: '1px solid #1e1e1e', paddingTop: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <p className="section-title" style={{ margin: 0 }}>Link Kontrolü</p>
-              <button
-                style={{ padding: '6px 14px', background: checking ? '#111' : '#1a1a2e', border: '1px solid #333', color: checking ? 'rgba(255,255,255,0.3)' : '#7eb8f7', fontSize: 11, cursor: checking ? 'not-allowed' : 'pointer', borderRadius: 3, fontWeight: 700 }}
-                onClick={handleCheckLinks}
-                disabled={checking}
-              >
-                {checking ? '⏳ Kontrol ediliyor…' : '🔍 Şimdi Kontrol Et'}
-              </button>
-            </div>
-            <p className="section-hint" style={{ marginBottom: 8 }}>
-              YouTube kanalları izlenirken yayın koptuğu/bittiği anda otomatik olarak o kanalın Channel ID'si üzerinden
-              yeni canlı yayın aranır — zamanlanmış bir job çalışmaz, tetikleyici her zaman gerçek oynatım hatasıdır.
-              Bu buton ise tüm kanalları (HLS dahil) tek seferde manuel kontrol etmek içindir.
-            </p>
-
-            {checking && (
-              <div style={{ background: '#111', border: '1px solid #222', borderRadius: 4, padding: '10px 12px', fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>
-                Kanallar kontrol ediliyor, bu birkaç dakika sürebilir…
-              </div>
-            )}
-
-            {checkResult && !checkResult.error && (
-              <div style={{ background: '#111', border: '1px solid #222', borderRadius: 4, padding: '10px 12px', fontSize: 11, marginBottom: 8 }}>
-                <div style={{ display: 'flex', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
-                  <span style={{ color: '#22c55e' }}>✓ {draft.length - (checkResult.broken?.length || 0)} çalışıyor</span>
-                  <span style={{ color: '#f87171' }}>✗ {checkResult.broken?.length || 0} bozuk</span>
-                  <span style={{ color: '#60a5fa' }}>⟳ {checkResult.fixed?.length || 0} otomatik düzeltildi</span>
-                </div>
-                {checkResult.fixed?.length > 0 && checkResult.fixed.map((f, i) => (
-                  <div key={i} style={{ color: 'rgba(255,255,255,0.5)', marginBottom: 2, fontSize: 10 }}>
-                    <span style={{ color: '#22c55e' }}>✓</span> <span style={{ color: '#fff' }}>{f.name}</span>: <span style={{ fontFamily: 'monospace' }}>{f.old}</span> → <span style={{ fontFamily: 'monospace', color: '#22c55e' }}>{f.new}</span>
-                  </div>
-                ))}
-                {checkResult.unfixable?.length > 0 && (
-                  <div style={{ marginTop: 6 }}>
-                    <span style={{ color: '#f87171', fontWeight: 600 }}>Manuel müdahale gerekli: </span>
-                    <span style={{ color: '#f87171' }}>{checkResult.unfixable.join(', ')}</span>
-                  </div>
-                )}
-                {checkResult.broken?.length === 0 && <span style={{ color: '#22c55e', fontWeight: 600 }}>Tüm linkler çalışıyor 🎉</span>}
-              </div>
-            )}
-            {checkResult?.error && (
-              <div style={{ background: '#1a0a0a', border: '1px solid #5a1a1a', borderRadius: 4, padding: '10px 12px', fontSize: 11, color: '#f87171', marginBottom: 8 }}>
-                Hata: {checkResult.error}
-              </div>
-            )}
-
-            {/* Job Geçmişi */}
-            {jobLogs.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Son Kontroller</p>
-                {jobLogs.map(log => (
-                  <div key={log.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', background: '#111', borderRadius: 3, marginBottom: 3, fontSize: 10 }}>
-                    <span style={{ color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>
-                      {new Date(log.ran_at).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    <span style={{ color: '#22c55e' }}>✓ {log.total - log.broken}</span>
-                    {log.broken > 0 && <span style={{ color: '#f87171' }}>✗ {log.broken}</span>}
-                    {log.fixed > 0 && <span style={{ color: '#60a5fa' }}>⟳ {log.fixed}</span>}
-                    {log.unfixable > 0 && <span style={{ color: '#f97316' }}>⚠ {log.unfixable}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
 
           <p style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid #1e1e1e', textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>
             T.C. Cumhurbaşkanlığı İletişim Başkanlığı
