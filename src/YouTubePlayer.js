@@ -4,8 +4,10 @@ import { refreshChannel } from './api';
 
 // Bozuk/yayından kaldırılmış video hata kodları
 const BROKEN_ERROR_CODES = new Set([2, 5, 100, 101, 150]);
-const MAX_AUTO_RETRIES = 4;
-const RETRY_DELAY_MS = 15000;
+const MAX_AUTO_RETRIES = 3;
+const RETRY_DELAY_MS = 60000; // API kotasını korumak için: başarısız denemeden sonra en az 1 dk bekle
+const BROKEN_CONFIRM_MS = 60000; // API'ye gitmeden önce kanalın en az 1 dk kesintisiz "çalışmıyor" olması şart
+const BROKEN_POLL_MS = 10000; // bu süre içinde birkaç kez kendiliğinden düzelip düzelmediğine (ücretsiz) bakılır
 
 export default function YouTubePlayer({ channel }) {
   const { id, name, source, yt_channel_id } = channel;
@@ -19,6 +21,7 @@ export default function YouTubePlayer({ channel }) {
   const currentVideoIdRef = useRef(source);
   const fixAttemptsRef = useRef(0);
   const fixingRef = useRef(false);
+  const brokenPollTimerRef = useRef(null);
 
   // Reaktif düzeltme: yayın koptuğu/bittiği ANDA sadece bu kanal için API'ye gidip yeni linki bulur.
   // Zamanlanmış bir job yok — tetikleyici her zaman gerçek oynatım hatasıdır.
@@ -64,6 +67,40 @@ export default function YouTubePlayer({ channel }) {
   const handleBrokenRef = useRef(handleBroken);
   useEffect(() => { handleBrokenRef.current = handleBroken; }, [handleBroken]);
 
+  // API kotasını korumak için: bir arıza şüphesi (ENDED/hata) görüldüğünde hemen
+  // YouTube API'sine gitmiyoruz. Bunun yerine `BROKEN_CONFIRM_MS` (1 dk) boyunca
+  // periyodik olarak (ücretsiz) playVideo() ile kendiliğinden düzelip düzelmediğine
+  // bakıyoruz; kanal bu süre boyunca kesintisiz "çalışmıyor" kalırsa ancak o zaman
+  // gerçek API çağrısını (handleBroken) tetikliyoruz.
+  const confirmBrokenThenFix = useCallback((YT) => {
+    if (brokenPollTimerRef.current) return; // zaten bir doğrulama döngüsü sürüyor
+    const startedAt = Date.now();
+
+    const poll = () => {
+      const player = playerRef.current;
+      const state = player?.getPlayerState ? player.getPlayerState() : null;
+      const stillBad = state === YT.PlayerState.ENDED || state === -1;
+
+      if (!stillBad) {
+        brokenPollTimerRef.current = null; // kendiliğinden düzeldi, API'ye hiç gitmedik
+        return;
+      }
+
+      player?.playVideo?.();
+
+      if (Date.now() - startedAt >= BROKEN_CONFIRM_MS) {
+        brokenPollTimerRef.current = null;
+        handleBrokenRef.current();
+      } else {
+        brokenPollTimerRef.current = setTimeout(poll, BROKEN_POLL_MS);
+      }
+    };
+
+    brokenPollTimerRef.current = setTimeout(poll, BROKEN_POLL_MS);
+  }, []);
+  const confirmBrokenRef = useRef(confirmBrokenThenFix);
+  useEffect(() => { confirmBrokenRef.current = confirmBrokenThenFix; }, [confirmBrokenThenFix]);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -104,7 +141,9 @@ export default function YouTubePlayer({ channel }) {
             e.target.playVideo();
           },
           onError: (e) => {
-            if (BROKEN_ERROR_CODES.has(e.data)) handleBrokenRef.current();
+            // Hata kodu bozuk/kaldırılmış videoya işaret etse bile API kotasını
+            // korumak için hemen değil, 1 dk kesintisiz doğrulama sonrası tetikleriz.
+            if (BROKEN_ERROR_CODES.has(e.data)) confirmBrokenRef.current(YT);
           },
           onStateChange: (e) => {
             // Kiosk modu: video hiçbir zaman durmamalı, duraklarsa hemen devam ettir
@@ -116,23 +155,10 @@ export default function YouTubePlayer({ channel }) {
                 }
               }, 600);
             }
-            // ENDED (0) çoğunlukla geçici bir durum blip'i (tampon/kalite geçişi),
-            // yayın gerçekten bitmiş değil. YouTube API'ye gitmeden önce önce
-            // basitçe devam ettirmeyi dene; sadece bu da işe yaramazsa gerçek
-            // arıza kabul edip API'yi tetikle.
+            // ENDED (0) çoğunlukla geçici bir blip (tampon/kalite geçişi). API'ye
+            // gitmeden önce kanalın kesintisiz en az 1 dk "çalışmıyor" kalması şart.
             if (e.data === YT.PlayerState.ENDED) {
-              setTimeout(() => {
-                const player = playerRef.current;
-                if (player?.getPlayerState && player.getPlayerState() === YT.PlayerState.ENDED) {
-                  player.playVideo();
-                  setTimeout(() => {
-                    const p = playerRef.current;
-                    if (p?.getPlayerState && p.getPlayerState() === YT.PlayerState.ENDED) {
-                      handleBrokenRef.current();
-                    }
-                  }, 3000);
-                }
-              }, 4000);
+              confirmBrokenRef.current(YT);
             }
           },
         },
@@ -141,6 +167,7 @@ export default function YouTubePlayer({ channel }) {
 
     return () => {
       destroyed = true;
+      if (brokenPollTimerRef.current) { clearTimeout(brokenPollTimerRef.current); brokenPollTimerRef.current = null; }
       if (playerRef.current?.destroy) {
         try { playerRef.current.destroy(); } catch { /* no-op */ }
       }
