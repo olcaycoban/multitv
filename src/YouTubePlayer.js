@@ -87,8 +87,16 @@ export default function YouTubePlayer({ channel }) {
             if (BROKEN_ERROR_CODES.has(e.data)) handleBrokenRef.current();
           },
           onStateChange: (e) => {
-            // ENDED (0): canlı yayın bir sonraki broadcast'e geçmiş olabilir
-            if (e.data === YT.PlayerState.ENDED) handleBrokenRef.current();
+            // ENDED (0) bazen geçici bir durum blip'i olabilir (tampon/kalite geçişi).
+            // Birkaç saniye sonra hâlâ ENDED ise gerçekten yayın bitmiş demektir.
+            if (e.data === YT.PlayerState.ENDED) {
+              setTimeout(() => {
+                const player = playerRef.current;
+                if (player?.getPlayerState && player.getPlayerState() === YT.PlayerState.ENDED) {
+                  handleBrokenRef.current();
+                }
+              }, 4000);
+            }
           },
         },
       });
