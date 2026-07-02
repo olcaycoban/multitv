@@ -47,3 +47,19 @@ export async function runLinkCheck() {
   if (!res.ok) throw new Error('Link kontrolü başarısız');
   return res.json();
 }
+
+export async function getJobLogs() {
+  const res = await fetch(`${BASE}/api/job-logs`);
+  if (!res.ok) throw new Error('Loglar alınamadı');
+  return res.json();
+}
+
+export async function updateChannelYtId(id, yt_channel_id) {
+  const res = await fetch(`${BASE}/api/channels/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ yt_channel_id }),
+  });
+  if (!res.ok) throw new Error('Güncelleme başarısız');
+  return res.json();
+}

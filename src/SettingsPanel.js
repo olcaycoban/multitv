@@ -17,7 +17,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { channelCounts } from './data';
-import { addChannel, updateChannel, deleteChannel, reorderChannels, runLinkCheck } from './api';
+import { addChannel, updateChannel, deleteChannel, reorderChannels, runLinkCheck, getJobLogs, updateChannelYtId } from './api';
 
 function SortableRow({ ch, index, isActive, accentColor, onNameChange, onSourceChange, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ch.id });
@@ -108,9 +108,23 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
   const [saving, setSaving] = useState(false);
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState(null);
+  const [jobLogs, setJobLogs] = useState([]);
+  const [ytTab, setYtTab] = useState(false); // YouTube Kanal ID paneli açık mı
+  const [ytDraft, setYtDraft] = useState({}); // { channelId: yt_channel_id }
+  const [ytSaving, setYtSaving] = useState(false);
 
   useEffect(() => {
-    if (isOpen) setDraft(channels.map(ch => ({ ...ch })));
+    if (isOpen) {
+      setDraft(channels.map(ch => ({ ...ch })));
+      // YouTube kanallarının mevcut yt_channel_id'lerini yükle
+      const map = {};
+      channels.filter(c => c.type === 'youtube').forEach(c => {
+        map[c.id] = c.yt_channel_id || '';
+      });
+      setYtDraft(map);
+      // Job loglarını yükle
+      getJobLogs().then(setJobLogs).catch(() => {});
+    }
   }, [isOpen]); // intentionally omit `channels` to only reset draft when panel opens
 
   const sensors = useSensors(
@@ -143,17 +157,35 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
     try {
       const result = await runLinkCheck();
       setCheckResult(result);
-      // Yeni linkler DB'ye kaydedildiyse draft'ı güncelle
       if (result.fixed && result.fixed.length > 0) {
         setDraft(prev => prev.map(ch => {
           const fix = result.fixed.find(f => f.name === ch.name);
           return fix ? { ...ch, source: fix.new } : ch;
         }));
       }
+      // Logları güncelle
+      getJobLogs().then(setJobLogs).catch(() => {});
     } catch (err) {
       setCheckResult({ error: err.message });
     } finally {
       setChecking(false);
+    }
+  };
+
+  const handleSaveYtIds = async () => {
+    setYtSaving(true);
+    try {
+      const ytChannels = channels.filter(c => c.type === 'youtube');
+      for (const ch of ytChannels) {
+        const newId = ytDraft[ch.id] ?? '';
+        if (newId !== (ch.yt_channel_id || '')) {
+          await updateChannelYtId(ch.id, newId || null);
+        }
+      }
+    } catch (err) {
+      alert('Kaydetme hatası: ' + err.message);
+    } finally {
+      setYtSaving(false);
     }
   };
 
@@ -298,68 +330,113 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
             {saving ? 'Kaydediliyor…' : 'Kaydet'}
           </button>
 
+          {/* YouTube Kanal ID'leri */}
+          <div style={{ marginTop: 24, borderTop: '1px solid #1e1e1e', paddingTop: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <p className="section-title" style={{ margin: 0 }}>YouTube Kanal ID'leri</p>
+              <button
+                style={{ padding: '4px 10px', background: 'transparent', border: '1px solid #333', color: 'rgba(255,255,255,0.5)', fontSize: 10, cursor: 'pointer', borderRadius: 3 }}
+                onClick={() => setYtTab(v => !v)}
+              >
+                {ytTab ? '▲ Gizle' : '▼ Göster'}
+              </button>
+            </div>
+            {ytTab && (
+              <>
+                <p className="section-hint">
+                  Her YouTube kanalına ait Channel ID'yi girin (örn: UCBi2mrWuNuyYy4gbM6fU18Q). Boş bırakılırsa otomatik çözülmeye çalışılır.
+                  <br />Kanal ID'sini bulmak için: youtube.com/@HANDLE → sayfa kaynağında "channelId" ara.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
+                  {channels.filter(c => c.type === 'youtube').map(ch => (
+                    <div key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#161616', padding: '4px 8px', borderRadius: 4 }}>
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', width: 120, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.name}</span>
+                      <input
+                        style={{ flex: 1, background: '#1e1e1e', border: '1px solid #2a2a2a', color: 'rgba(255,255,255,0.8)', fontSize: 10, padding: '5px 8px', borderRadius: 3, outline: 'none', fontFamily: 'monospace' }}
+                        placeholder="UC..."
+                        value={ytDraft[ch.id] || ''}
+                        onChange={e => setYtDraft(prev => ({ ...prev, [ch.id]: e.target.value }))}
+                        onFocus={e => (e.target.style.borderColor = accentColor)}
+                        onBlur={e => (e.target.style.borderColor = '#2a2a2a')}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <button
+                  style={{ width: '100%', padding: 8, background: '#1a2a1a', border: '1px solid #2a4a2a', color: '#4ade80', fontSize: 11, fontWeight: 700, cursor: ytSaving ? 'not-allowed' : 'pointer', borderRadius: 3, opacity: ytSaving ? 0.6 : 1 }}
+                  onClick={handleSaveYtIds}
+                  disabled={ytSaving}
+                >
+                  {ytSaving ? 'Kaydediliyor…' : '💾 Kanal ID\'lerini Kaydet'}
+                </button>
+              </>
+            )}
+          </div>
+
           {/* Link Kontrolü */}
           <div style={{ marginTop: 24, borderTop: '1px solid #1e1e1e', paddingTop: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
               <p className="section-title" style={{ margin: 0 }}>Link Kontrolü</p>
               <button
-                style={{ padding: '6px 12px', background: '#1a1a2e', border: '1px solid #333', color: checking ? 'rgba(255,255,255,0.4)' : '#7eb8f7', fontSize: 11, cursor: checking ? 'not-allowed' : 'pointer', borderRadius: 3, fontWeight: 600 }}
+                style={{ padding: '6px 14px', background: checking ? '#111' : '#1a1a2e', border: '1px solid #333', color: checking ? 'rgba(255,255,255,0.3)' : '#7eb8f7', fontSize: 11, cursor: checking ? 'not-allowed' : 'pointer', borderRadius: 3, fontWeight: 700 }}
                 onClick={handleCheckLinks}
                 disabled={checking}
               >
                 {checking ? '⏳ Kontrol ediliyor…' : '🔍 Şimdi Kontrol Et'}
               </button>
             </div>
-            <p className="section-hint" style={{ marginBottom: checking ? 8 : 0 }}>
-              Tüm kanalları test eder, bozuk YouTube linklerini otomatik günceller. HLS linkler bozuksa aşağıda gösterilir.
+            <p className="section-hint" style={{ marginBottom: 8 }}>
+              Tüm kanalları test eder, bozuk YouTube linklerini otomatik günceller. Her 30 dakikada bir otomatik çalışır.
             </p>
 
             {checking && (
-              <div style={{ background: '#111', border: '1px solid #222', borderRadius: 4, padding: '10px 12px', fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+              <div style={{ background: '#111', border: '1px solid #222', borderRadius: 4, padding: '10px 12px', fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>
                 Kanallar kontrol ediliyor, bu birkaç dakika sürebilir…
               </div>
             )}
 
             {checkResult && !checkResult.error && (
-              <div style={{ background: '#111', border: '1px solid #222', borderRadius: 4, padding: '10px 12px', fontSize: 11 }}>
+              <div style={{ background: '#111', border: '1px solid #222', borderRadius: 4, padding: '10px 12px', fontSize: 11, marginBottom: 8 }}>
                 <div style={{ display: 'flex', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
-                  <span style={{ color: '#22c55e' }}>✓ Çalışan: {(draft.length) - (checkResult.broken?.length || 0)}</span>
-                  <span style={{ color: '#f87171' }}>✗ Bozuk: {checkResult.broken?.length || 0}</span>
-                  <span style={{ color: '#60a5fa' }}>⟳ Otomatik düzeltilen: {checkResult.fixed?.length || 0}</span>
+                  <span style={{ color: '#22c55e' }}>✓ {draft.length - (checkResult.broken?.length || 0)} çalışıyor</span>
+                  <span style={{ color: '#f87171' }}>✗ {checkResult.broken?.length || 0} bozuk</span>
+                  <span style={{ color: '#60a5fa' }}>⟳ {checkResult.fixed?.length || 0} otomatik düzeltildi</span>
                 </div>
-
-                {checkResult.fixed && checkResult.fixed.length > 0 && (
-                  <div style={{ marginBottom: 8 }}>
-                    <p style={{ color: '#60a5fa', margin: '0 0 4px', fontWeight: 600 }}>Otomatik güncellenenler:</p>
-                    {checkResult.fixed.map((f, i) => (
-                      <div key={i} style={{ color: 'rgba(255,255,255,0.5)', marginBottom: 2 }}>
-                        <span style={{ color: '#fff' }}>{f.name}</span>: <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{f.old}</span> → <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#22c55e' }}>{f.new}</span>
-                      </div>
-                    ))}
+                {checkResult.fixed?.length > 0 && checkResult.fixed.map((f, i) => (
+                  <div key={i} style={{ color: 'rgba(255,255,255,0.5)', marginBottom: 2, fontSize: 10 }}>
+                    <span style={{ color: '#22c55e' }}>✓</span> <span style={{ color: '#fff' }}>{f.name}</span>: <span style={{ fontFamily: 'monospace' }}>{f.old}</span> → <span style={{ fontFamily: 'monospace', color: '#22c55e' }}>{f.new}</span>
+                  </div>
+                ))}
+                {checkResult.unfixable?.length > 0 && (
+                  <div style={{ marginTop: 6 }}>
+                    <span style={{ color: '#f87171', fontWeight: 600 }}>Manuel güncelleme gerekli: </span>
+                    <span style={{ color: '#f87171' }}>{checkResult.unfixable.join(', ')}</span>
                   </div>
                 )}
-
-                {checkResult.unfixable && checkResult.unfixable.length > 0 && (
-                  <div>
-                    <p style={{ color: '#f87171', margin: '0 0 4px', fontWeight: 600 }}>Manuel güncelleme gerekli:</p>
-                    {checkResult.unfixable.map((name, i) => (
-                      <div key={i} style={{ color: '#f87171', marginBottom: 2 }}>⚠ {name}</div>
-                    ))}
-                    <p style={{ color: 'rgba(255,255,255,0.35)', marginTop: 6, fontSize: 10 }}>
-                      Yukarıdaki kanal listesinde bu kanalların linklerini güncelleyin ve Kaydet'e basın.
-                    </p>
-                  </div>
-                )}
-
-                {checkResult.broken?.length === 0 && (
-                  <div style={{ color: '#22c55e', fontWeight: 600 }}>Tüm linkler çalışıyor 🎉</div>
-                )}
+                {checkResult.broken?.length === 0 && <span style={{ color: '#22c55e', fontWeight: 600 }}>Tüm linkler çalışıyor 🎉</span>}
+              </div>
+            )}
+            {checkResult?.error && (
+              <div style={{ background: '#1a0a0a', border: '1px solid #5a1a1a', borderRadius: 4, padding: '10px 12px', fontSize: 11, color: '#f87171', marginBottom: 8 }}>
+                Hata: {checkResult.error}
               </div>
             )}
 
-            {checkResult?.error && (
-              <div style={{ background: '#1a0a0a', border: '1px solid #5a1a1a', borderRadius: 4, padding: '10px 12px', fontSize: 11, color: '#f87171' }}>
-                Hata: {checkResult.error}
+            {/* Job Geçmişi */}
+            {jobLogs.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Son Kontroller</p>
+                {jobLogs.map(log => (
+                  <div key={log.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', background: '#111', borderRadius: 3, marginBottom: 3, fontSize: 10 }}>
+                    <span style={{ color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}>
+                      {new Date(log.ran_at).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <span style={{ color: '#22c55e' }}>✓ {log.total - log.broken}</span>
+                    {log.broken > 0 && <span style={{ color: '#f87171' }}>✗ {log.broken}</span>}
+                    {log.fixed > 0 && <span style={{ color: '#60a5fa' }}>⟳ {log.fixed}</span>}
+                    {log.unfixable > 0 && <span style={{ color: '#f97316' }}>⚠ {log.unfixable}</span>}
+                  </div>
+                ))}
               </div>
             )}
           </div>
