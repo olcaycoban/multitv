@@ -101,27 +101,30 @@ function SortableRow({ ch, index, isActive, accentColor, refreshStatus, onNameCh
         />
       )}
 
-      {isYoutube && (
-        <>
-          <span style={{ width: 16, textAlign: 'center', fontSize: 12, flexShrink: 0 }} title="Canlı link durumu">
-            {refreshStatus === 'ok' && '✅'}
-            {refreshStatus === 'notfound' && '⚠️'}
-            {refreshStatus === 'error' && '❌'}
-            {!refreshStatus && ch.yt_channel_id && ch.source && '🔗'}
-          </span>
-          <button
-            style={{ background: 'transparent', border: 'none', color: isSaving ? 'rgba(255,255,255,0.2)' : '#7eb8f7', fontSize: 13, cursor: isSaving ? 'not-allowed' : 'pointer', padding: '0 3px', lineHeight: 1, flexShrink: 0 }}
-            onClick={onRefreshOne}
-            disabled={isSaving || !ch.yt_channel_id || ch._new}
-            title={ch._new ? 'Önce kaydedin' : 'Canlı linki şimdi yenile'}
-          >
-            {isSaving ? '⏳' : '⟳'}
-          </button>
-        </>
-      )}
+      {/* Sabit genişlikli alan: satır türünden bağımsız hizalama için her zaman render edilir */}
+      <span style={{ width: 16, textAlign: 'center', fontSize: 12, flexShrink: 0 }} title="Canlı link durumu">
+        {isYoutube && refreshStatus === 'ok' && '✅'}
+        {isYoutube && refreshStatus === 'notfound' && '⚠️'}
+        {isYoutube && refreshStatus === 'error' && '❌'}
+        {isYoutube && !refreshStatus && ch.yt_channel_id && ch.source && '🔗'}
+      </span>
+      <button
+        style={{
+          background: 'transparent', border: 'none',
+          color: !isYoutube ? 'transparent' : (isSaving ? 'rgba(255,255,255,0.2)' : '#7eb8f7'),
+          fontSize: 13, cursor: (!isYoutube || isSaving) ? 'default' : 'pointer',
+          padding: '0 3px', lineHeight: 1, flexShrink: 0, width: 18,
+          pointerEvents: isYoutube ? 'auto' : 'none',
+        }}
+        onClick={onRefreshOne}
+        disabled={!isYoutube || isSaving || !ch.yt_channel_id || ch._new}
+        title={!isYoutube ? '' : (ch._new ? 'Önce kaydedin' : 'Canlı linki şimdi yenile')}
+      >
+        {isYoutube ? (isSaving ? '⏳' : '⟳') : ''}
+      </button>
 
       <button
-        style={{ background: '#1e1e1e', border: '1px solid #2a2a2a', color: 'rgba(255,255,255,0.4)', fontSize: 9, cursor: 'pointer', padding: '4px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 700 }}
+        style={{ background: '#1e1e1e', border: '1px solid #2a2a2a', color: 'rgba(255,255,255,0.4)', fontSize: 9, cursor: 'pointer', padding: '4px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 700, width: 34 }}
         onClick={onToggleType}
         title="Tür değiştir"
       >
@@ -407,8 +410,9 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
               </button>
             </div>
             <p className="section-hint" style={{ marginBottom: 8 }}>
-              Her kanalın mevcut linkinin canlı olup olmadığını kontrol eder (ucuz). Sadece bozuk çıkan kanal için
-              o kanalın Channel ID'si üzerinden yeni canlı yayın aranır ve otomatik günceller. 30 dakikada bir otomatik çalışır.
+              YouTube kanalları izlenirken yayın koptuğu/bittiği anda otomatik olarak o kanalın Channel ID'si üzerinden
+              yeni canlı yayın aranır — zamanlanmış bir job çalışmaz, tetikleyici her zaman gerçek oynatım hatasıdır.
+              Bu buton ise tüm kanalları (HLS dahil) tek seferde manuel kontrol etmek içindir.
             </p>
 
             {checking && (

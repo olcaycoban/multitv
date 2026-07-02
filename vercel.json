@@ -1,11 +1,5 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": ".next",
-  "framework": "nextjs",
-  "crons": [
-    {
-      "path": "/api/check-links",
-      "schedule": "0 3 * * *"
-    }
-  ]
+  "framework": "nextjs"
 }
