@@ -142,9 +142,10 @@ export default function YouTubePlayer({ channel, muted = true }) {
           onReady: (e) => {
             if (mutedRef.current) e.target.mute(); else e.target.unMute();
             e.target.playVideo();
-            // Aynı anda çok sayıda YouTube akışı oynatıldığı için bant genişliğini
-            // korumak amacıyla en düşük kaliteyi talep ediyoruz.
             try { e.target.setPlaybackQuality('small'); } catch { /* no-op */ }
+            // Altyazıları tamamen kapat (cc_load_policy:0 tek başına yetmeyebilir)
+            try { e.target.setOption('captions', 'track', {}); } catch { /* no-op */ }
+            try { e.target.unloadModule('cc'); } catch { /* no-op */ }
           },
           onPlaybackQualityChange: (e) => {
             // YouTube bazen kaliteyi kendiliğinden yükseltebiliyor; düşük tutmaya zorla

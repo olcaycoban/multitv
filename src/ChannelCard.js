@@ -19,7 +19,9 @@ export default function ChannelCard({ channel, style, muted, onToggleAudio }) {
         : <HlsPlayer src={channel.source} name={channel.name} muted={muted} />
       }
 
-      {/* iframe mouse olaylarını yutuyor; şeffaf overlay hover yakalamak için */}
+      {/* iframe mouse olaylarını yutuyor; overlay sadece hover girişini yakalar.
+          onMouseLeave kasıtlı yok — dış card div'i mouse'un tamamen çıkışını yakalar,
+          böylece butona geçince hovered=false olmuyor. */}
       <div
         style={{
           position: 'absolute', inset: 0, zIndex: 10,
@@ -28,7 +30,6 @@ export default function ChannelCard({ channel, style, muted, onToggleAudio }) {
           cursor: 'default',
         }}
         onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
       />
 
       <div className="channel-label">{channel.name}</div>

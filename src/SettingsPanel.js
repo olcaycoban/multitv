@@ -19,6 +19,25 @@ import { CSS } from '@dnd-kit/utilities';
 import { channelCounts } from './data';
 import { addChannel, updateChannel, deleteChannel, reorderChannels, refreshChannel } from './api';
 
+// YouTube URL veya ID'yi ayrıştırır.
+// kind: 'video' → source'a yaz (API gerekmez)
+// kind: 'channel' → yt_channel_id'ye yaz (mevcut API akışı)
+// kind: 'raw' → olduğu gibi bırak
+function parseYouTubeInput(raw) {
+  const s = raw.trim();
+  // video URL: youtube.com/watch?v=ID veya youtu.be/ID
+  let m = s.match(/(?:youtube\.com\/watch[^#]*[?&]v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  if (m) return { kind: 'video', id: m[1] };
+  // channel URL: youtube.com/channel/UC...
+  m = s.match(/youtube\.com\/channel\/(UC[\w-]+)/);
+  if (m) return { kind: 'channel', id: m[1] };
+  // ham UC... channel ID
+  if (s.startsWith('UC') && s.length > 10) return { kind: 'channel', id: s };
+  // ham video ID (tam 11 karakter, sadece geçerli base64url karakterler)
+  if (/^[A-Za-z0-9_-]{11}$/.test(s)) return { kind: 'video', id: s };
+  return { kind: 'raw', id: s };
+}
+
 function SortableRow({ ch, index, isActive, accentColor, refreshStatus, onNameChange, onFieldChange, onToggleType, onRefreshOne, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ch.id });
 
@@ -82,14 +101,38 @@ function SortableRow({ ch, index, isActive, accentColor, refreshStatus, onNameCh
       />
 
       {isYoutube ? (
-        <input
-          style={{ flex: 1.4, minWidth: 0, background: '#1e1e1e', border: '1px solid #2a2a2a', color: 'rgba(255,255,255,0.9)', fontSize: 10, padding: '6px 8px', borderRadius: 3, outline: 'none', fontFamily: 'monospace' }}
-          placeholder="Kanal ID (UC…)"
-          value={ch.yt_channel_id || ''}
-          onChange={e => onFieldChange('yt_channel_id', e.target.value)}
-          onFocus={e => (e.target.style.borderColor = accentColor)}
-          onBlur={e => (e.target.style.borderColor = '#2a2a2a')}
-        />
+        <div style={{ flex: 1.4, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <input
+            style={{ width: '100%', background: '#1e1e1e', border: '1px solid #2a2a2a', color: 'rgba(255,255,255,0.9)', fontSize: 10, padding: '6px 8px', borderRadius: 3, outline: 'none', fontFamily: 'monospace', boxSizing: 'border-box' }}
+            placeholder="Kanal ID (UC…) veya video linki"
+            value={ch.yt_channel_id || ch._videoIdDirect || ''}
+            onChange={e => {
+              const parsed = parseYouTubeInput(e.target.value);
+              if (parsed.kind === 'video') {
+                onFieldChange('_videoIdDirect', parsed.id);
+                onFieldChange('yt_channel_id', '');
+              } else if (parsed.kind === 'channel') {
+                onFieldChange('yt_channel_id', parsed.id);
+                onFieldChange('_videoIdDirect', '');
+              } else {
+                onFieldChange('yt_channel_id', e.target.value);
+                onFieldChange('_videoIdDirect', '');
+              }
+            }}
+            onFocus={e => (e.target.style.borderColor = accentColor)}
+            onBlur={e => (e.target.style.borderColor = '#2a2a2a')}
+          />
+          {ch._videoIdDirect && (
+            <span style={{ fontSize: 9, color: '#7eb8f7', paddingLeft: 2 }}>
+              Video ID: {ch._videoIdDirect}
+            </span>
+          )}
+          {ch.yt_channel_id && !ch._videoIdDirect && (
+            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', paddingLeft: 2 }}>
+              Kanal ID: {ch.yt_channel_id}
+            </span>
+          )}
+        </div>
       ) : (
         <input
           style={{ flex: 1.4, minWidth: 0, background: '#1e1e1e', border: '1px solid #2a2a2a', color: 'rgba(255,255,255,0.9)', fontSize: 11, padding: '6px 8px', borderRadius: 3, outline: 'none', fontFamily: 'monospace' }}
@@ -223,16 +266,22 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
       for (const ch of draft) {
         const isYoutube = ch.type === 'youtube';
         const ytId = (ch.yt_channel_id || '').trim();
-        if (isYoutube && !ytId) continue;       // YouTube kanalı Channel ID olmadan kaydedilmez
-        if (!isYoutube && !ch.source.trim()) continue; // HLS kanalı m3u8 olmadan kaydedilmez
+        const directVideoId = (ch._videoIdDirect || '').trim(); // URL'den parse edilmiş video ID
+        // YouTube kanalı: channel ID veya direkt video ID'den biri olmalı
+        if (isYoutube && !ytId && !directVideoId) continue;
+        if (!isYoutube && !(ch.source || '').trim()) continue;
 
         if (ch._new) {
-          const created = await addChannel({ name: ch.name, source: isYoutube ? '' : ch.source, type: ch.type, screen: screen || 'main' });
-          if (isYoutube) {
+          if (isYoutube && directVideoId) {
+            // Direkt video ID → API çağrısı yapmadan kaydet
+            const created = await addChannel({ name: ch.name, source: directVideoId, type: ch.type, screen: screen || 'main' });
+            savedChannels.push(created);
+          } else if (isYoutube) {
+            const created = await addChannel({ name: ch.name, source: '', type: ch.type, screen: screen || 'main' });
             const refreshed = await refreshChannel(created.id, ytId);
             savedChannels.push(refreshed.channel || created);
           } else {
-            savedChannels.push(created);
+            savedChannels.push(await addChannel({ name: ch.name, source: ch.source, type: ch.type, screen: screen || 'main' }));
           }
         } else {
           const orig = channels.find(c => c.id === ch.id);
@@ -241,23 +290,22 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
           const nameChanged = orig && orig.name !== ch.name;
           const typeChanged = orig && orig.type !== ch.type;
           const hlsSourceChanged = !isYoutube && orig && orig.source !== ch.source;
+          const directVideoChanged = isYoutube && directVideoId && orig && orig.source !== directVideoId;
 
-          if (nameChanged || typeChanged || hlsSourceChanged) {
+          if (nameChanged || typeChanged || hlsSourceChanged || directVideoChanged) {
             result = await updateChannel(ch.id, {
               name: ch.name,
               type: ch.type,
               ...(!isYoutube ? { source: ch.source } : {}),
+              ...(directVideoId ? { source: directVideoId, yt_channel_id: '' } : {}),
             });
           }
 
-          const ytChanged = isYoutube && orig && (orig.yt_channel_id || '') !== ytId;
-          // Tür HLS -> YouTube'a değiştiyse Channel ID aynı kalmış olsa bile
-          // source alanı hâlâ eski m3u8 linki olabilir; mutlaka tazele.
-          if (isYoutube && ytId && (ytChanged || typeChanged)) {
+          const ytChanged = isYoutube && !directVideoId && orig && (orig.yt_channel_id || '') !== ytId;
+          if (isYoutube && !directVideoId && ytId && (ytChanged || typeChanged)) {
             const refreshed = await refreshChannel(ch.id, ytId);
             result = refreshed.channel || result;
           } else if (isYoutube && !origIds.has(ch.id)) {
-            // olağandışı durum, yine de mevcut draft'ı koru
             result = ch;
           }
 
@@ -265,8 +313,13 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
         }
       }
 
-      const ids = savedChannels.map(c => c.id);
-      if (ids.length > 0) await reorderChannels(ids);
+      // Draft'taki TÜM mevcut kanalları sıraya dahil et (yeni eklenenler hariç).
+      // Sadece savedChannels'ı gönderirsek atlanan kanallar eski position'ı korur
+      // ve sonraki fetch'te yanlış sıra gelir.
+      const reorderIds = draft
+        .filter(c => !c._new)
+        .map(c => savedChannels.find(s => s.id === c.id)?.id ?? c.id);
+      if (reorderIds.length > 0) await reorderChannels(reorderIds);
 
       onChannelsUpdate(savedChannels);
       onClose();
