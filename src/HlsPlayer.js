@@ -4,7 +4,7 @@ import Hls from 'hls.js';
 const MAX_RETRIES = 8;
 const STALL_TIMEOUT_MS = 9000; // bu süre boyunca görüntü ilerlemezse (siyah ekran) kurtarma tetiklenir
 
-export default function HlsPlayer({ src, name }) {
+export default function HlsPlayer({ src, name, muted = true }) {
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
   const retriesRef = useRef(0);
@@ -139,14 +139,23 @@ export default function HlsPlayer({ src, name }) {
     if (attachRef.current) attachRef.current();
   };
 
+  // React'in `muted` JSX özelliği tarayıcı autoplay kısıtlamaları nedeniyle güvenilir
+  // şekilde senkronize olmayabiliyor; DOM üzerinde doğrudan ayarlıyoruz.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = muted;
+    if (!muted) video.play().catch(() => {});
+  }, [muted]);
+
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', background: '#111' }}>
       <video
         ref={videoRef}
         style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-        controls
+        controls={false}
         autoPlay
-        muted
+        muted={muted}
         playsInline
         title={name}
       />

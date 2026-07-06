@@ -9,7 +9,7 @@ const RETRY_DELAY_MS = 60000; // API kotasını korumak için: başarısız dene
 const BROKEN_CONFIRM_MS = 60000; // API'ye gitmeden önce kanalın en az 1 dk kesintisiz "çalışmıyor" olması şart
 const BROKEN_POLL_MS = 10000; // bu süre içinde birkaç kez kendiliğinden düzelip düzelmediğine (ücretsiz) bakılır
 
-export default function YouTubePlayer({ channel }) {
+export default function YouTubePlayer({ channel, muted = true }) {
   const { id, name, source, yt_channel_id } = channel;
 
   const [visible, setVisible] = useState(false);
@@ -22,6 +22,8 @@ export default function YouTubePlayer({ channel }) {
   const fixAttemptsRef = useRef(0);
   const fixingRef = useRef(false);
   const brokenPollTimerRef = useRef(null);
+  const mutedRef = useRef(muted);
+  useEffect(() => { mutedRef.current = muted; }, [muted]);
 
   // Reaktif düzeltme: yayın koptuğu/bittiği ANDA sadece bu kanal için API'ye gidip yeni linki bulur.
   // Zamanlanmış bir job yok — tetikleyici her zaman gerçek oynatım hatasıdır.
@@ -132,12 +134,13 @@ export default function YouTubePlayer({ channel }) {
         playerVars: {
           autoplay: 1, mute: 1, playsinline: 1, rel: 0, modestbranding: 1,
           controls: 0, disablekb: 1, fs: 0, iv_load_policy: 3,
+          cc_load_policy: 0, cc_lang_pref: 'none',
         },
         events: {
           // autoplay parametresi tek başına bazı tarayıcılarda yeterli olmuyor,
           // player hazır olduğunda oynatmayı açıkça tetikliyoruz.
           onReady: (e) => {
-            e.target.mute();
+            if (mutedRef.current) e.target.mute(); else e.target.unMute();
             e.target.playVideo();
             // Aynı anda çok sayıda YouTube akışı oynatıldığı için bant genişliğini
             // korumak amacıyla en düşük kaliteyi talep ediyoruz.
@@ -183,6 +186,16 @@ export default function YouTubePlayer({ channel }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
+
+  // Kullanıcı hoparlör butonuna bastığında (kart yeniden kurulmadan) sesi anında yansıt.
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player) return;
+    try {
+      if (muted) player.mute?.();
+      else { player.unMute?.(); player.setVolume?.(100); }
+    } catch { /* no-op */ }
+  }, [muted]);
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%', background: '#111', position: 'relative' }}>

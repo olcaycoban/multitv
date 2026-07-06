@@ -71,6 +71,19 @@ html, body, #root {
   pointer-events: none;
 }
 
+/* hover'da göster, aktifse her zaman göster */
+.channel-card:hover .audio-btn-wrap { opacity: 1; }
+.audio-btn-wrap {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 9999;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: all;
+}
+.audio-btn-wrap.active { opacity: 1; }
+
 .spinner {
   width: 28px; height: 28px;
   border: 2px solid rgba(198,29,35,.3);
