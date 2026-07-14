@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import {
   DndContext,
@@ -17,7 +17,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { channelCounts } from './data';
-import { addChannel, updateChannel, deleteChannel, reorderChannels, refreshChannel } from './api';
+import { addChannel, updateChannel, deleteChannel, reorderChannels, refreshChannel, fetchChannels } from './api';
 
 // YouTube URL veya ID'yi ayrıştırır.
 // kind: 'video' → source'a yaz (API gerekmez)
@@ -187,13 +187,19 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
   const [draft, setDraft] = useState([]);
   const [saving, setSaving] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState({}); // { channelId: 'saving'|'ok'|'notfound'|'error' }
+  const wasOpenRef = useRef(false);
 
+  // Panel açıldığında draft'ı doldur. Kanallar henüz yüklenmemişse ([]) boş kalır;
+  // channels API'den gelince ikinci koşul draft'ı otomatik doldurur.
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !wasOpenRef.current) {
       setDraft(channels.map(ch => ({ ...ch })));
       setRefreshStatus({});
+    } else if (isOpen && draft.length === 0 && channels.length > 0) {
+      setDraft(channels.map(ch => ({ ...ch })));
     }
-  }, [isOpen]); // intentionally omit `channels` to only reset draft when panel opens
+    wasOpenRef.current = isOpen;
+  }, [isOpen, channels, draft.length]);
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
@@ -253,6 +259,10 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
   };
 
   const save = async () => {
+    if (draft.length === 0) {
+      alert('Kanal listesi boş. Kaydetmek için en az bir kanal gerekli.');
+      return;
+    }
     setSaving(true);
     try {
       const origIds = new Set(channels.map(c => c.id));
@@ -321,7 +331,9 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
         .map(c => savedChannels.find(s => s.id === c.id)?.id ?? c.id);
       if (reorderIds.length > 0) await reorderChannels(reorderIds);
 
-      onChannelsUpdate(savedChannels);
+      // Kayıt sonrası API'den taze liste çek — savedChannels eksik kalırsa UI boş kalmaz
+      const fresh = await fetchChannels(screen || 'main');
+      onChannelsUpdate(fresh);
       onClose();
     } catch (err) {
       console.error(err);

@@ -17,6 +17,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "check-links": "node lib/check-links.js"
+    "check-links": "node lib/check-links.js",
+    "reseed": "node scripts/reseed-db.js",
+    "reseed:force": "node scripts/reseed-db.js --force"
   }
 }
