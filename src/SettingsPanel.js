@@ -17,7 +17,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { channelCounts } from './data';
-import { addChannel, updateChannel, deleteChannel, reorderChannels, refreshChannel, fetchChannels } from './api';
+import { addChannel, updateChannel, reorderChannels, refreshChannel, fetchChannels } from './api';
 
 // YouTube URL veya ID'yi ayrıştırır.
 // kind: 'video' → source'a yaz (API gerekmez)
@@ -38,7 +38,7 @@ function parseYouTubeInput(raw) {
   return { kind: 'raw', id: s };
 }
 
-function SortableRow({ ch, index, isActive, accentColor, refreshStatus, onNameChange, onFieldChange, onToggleType, onRefreshOne, onRemove }) {
+function SortableRow({ ch, index, isActive, accentColor, refreshStatus, onNameChange, onFieldChange, onToggleType, onRefreshOne }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: ch.id });
 
   const activeGreen = '#22c55e';
@@ -173,12 +173,6 @@ function SortableRow({ ch, index, isActive, accentColor, refreshStatus, onNameCh
       >
         {isYoutube ? 'YT' : 'HLS'}
       </button>
-
-      <button
-        style={{ background: 'transparent', border: 'none', color: 'rgba(255,80,80,0.5)', fontSize: 18, cursor: 'pointer', padding: '0 4px', lineHeight: 1, flexShrink: 0 }}
-        onClick={onRemove}
-        title="Sil"
-      >×</button>
     </div>
   );
 }
@@ -254,10 +248,6 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
     setDraft(prev => [...prev, { id: `new-${Date.now()}`, name: '', source: '', type: 'youtube', yt_channel_id: '', screen: screen || 'main', _new: true }]);
   };
 
-  const handleRemove = (id) => {
-    setDraft(prev => prev.filter(ch => ch.id !== id));
-  };
-
   const save = async () => {
     if (draft.length === 0) {
       alert('Kanal listesi boş. Kaydetmek için en az bir kanal gerekli.');
@@ -266,11 +256,6 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
     setSaving(true);
     try {
       const origIds = new Set(channels.map(c => c.id));
-      const draftIds = new Set(draft.filter(c => !c._new).map(c => c.id));
-
-      for (const orig of channels) {
-        if (!draftIds.has(orig.id)) await deleteChannel(orig.id);
-      }
 
       const savedChannels = [];
       for (const ch of draft) {
@@ -419,7 +404,6 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
                   onFieldChange={(field, val) => updateField(ch.id, field, val)}
                   onToggleType={() => toggleType(ch.id)}
                   onRefreshOne={() => handleRefreshOne(ch)}
-                  onRemove={() => handleRemove(ch.id)}
                 />
               ))}
             </SortableContext>

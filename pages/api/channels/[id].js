@@ -10,10 +10,9 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
-    await db.remove(id);
-    return res.status(204).end();
+    return res.status(403).json({ error: 'Kanal silme devre dışı' });
   }
 
-  res.setHeader('Allow', ['PATCH', 'DELETE']);
+  res.setHeader('Allow', ['PATCH']);
   res.status(405).end();
 }
