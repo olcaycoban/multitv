@@ -34,8 +34,11 @@ function Screen({ screen, topbarClass, subtitle, accentColor, onNavigate, navLab
   useEffect(() => {
     setLoading(true);
     fetchChannels(screen)
-      .then(setChannels)
-      .catch(console.error)
+      .then(data => setChannels(Array.isArray(data) ? data : []))
+      .catch(err => {
+        console.error(err);
+        setChannels([]);
+      })
       .finally(() => setLoading(false));
   }, [screen]);
 

@@ -54,6 +54,16 @@ export async function getJobLogs() {
   return res.json();
 }
 
+export async function fetchAllLiveLinks(screen) {
+  const res = await fetch(`${BASE}/api/channels/fetch-links`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ screen }),
+  });
+  if (!res.ok) throw new Error('Linkler çekilemedi');
+  return res.json();
+}
+
 export async function refreshChannel(id, yt_channel_id) {
   const res = await fetch(`${BASE}/api/channels/refresh`, {
     method: 'POST',
