@@ -59,6 +59,16 @@ html, body, #root {
   background: #000;
   overflow: hidden;
 }
+.channel-card:fullscreen,
+.channel-card--fullscreen:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+}
+.channel-card:fullscreen .channel-label,
+.channel-card--fullscreen:fullscreen .channel-label {
+  opacity: 1;
+}
 .channel-card:hover .channel-label { opacity: 1; }
 
 .channel-label {

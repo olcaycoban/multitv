@@ -1,13 +1,19 @@
 import db from '../../../lib/db';
+import { requireUser } from '../../../lib/auth';
 
 export default async function handler(req, res) {
+  const session = await requireUser(req, res);
+  if (!session) return;
+
+  const screen = req.query.screen || req.body?.screen || 'main';
+
   if (req.method === 'GET') {
-    const screen = req.query.screen || 'main';
-    return res.status(200).json(await db.getAll(screen));
+    const channels = await db.getChannelsForUser(session.userId, screen);
+    return res.status(200).json(channels);
   }
 
   if (req.method === 'POST') {
-    const { name, source, type, screen, yt_channel_id } = req.body;
+    const { name, source, type, yt_channel_id } = req.body;
     if (!name) return res.status(400).json({ error: 'name required' });
     const channelType = type || 'youtube';
     if (channelType === 'hls' && !(source || '').trim()) {
@@ -17,9 +23,13 @@ export default async function handler(req, res) {
       name,
       source: (source || '').trim(),
       type: channelType,
-      screen: screen || 'main',
+      screen,
       yt_channel_id: yt_channel_id || null,
     });
+    const existing = await db.getChannelsForUser(session.userId, screen);
+    const ids = existing.map(c => c.id);
+    if (!ids.includes(channel.id)) ids.push(channel.id);
+    await db.reorderUserChannels(session.userId, screen, ids);
     return res.status(201).json(channel);
   }
 

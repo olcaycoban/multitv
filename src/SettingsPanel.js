@@ -369,7 +369,7 @@ export default function SettingsPanel({ isOpen, onClose, channelCount, onCountCh
       const reorderIds = draft
         .filter(c => !c._new)
         .map(c => savedChannels.find(s => s.id === c.id)?.id ?? c.id);
-      if (reorderIds.length > 0) await reorderChannels(reorderIds);
+      if (reorderIds.length > 0) await reorderChannels(reorderIds, screen || 'main');
 
       const fresh = await fetchChannels(screen || 'main');
       if (Array.isArray(fresh) && fresh.length > 0) {

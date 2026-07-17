@@ -1,18 +1,37 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import ChannelCard from './ChannelCard';
 import { gridConfigs, FEATURED_LAYOUT_COUNT } from './data';
+
+function channelKey(ch, i) {
+  return `${ch.id ?? ch.name}-${i}`;
+}
 
 export default function TVGrid({ channels, channelCount }) {
   const config = gridConfigs[channelCount] || gridConfigs[25];
   const isFeatured = channelCount === FEATURED_LAYOUT_COUNT;
   const visible = channels.slice(0, channelCount);
 
-  // Aynı anda tüm kanalların sesi açık olmasın diye tek bir "aktif ses" kanalı tutuyoruz.
-  // Bir kanala tıklandığında o kanalın sesi açılır, diğerleri otomatik susturulur.
   const [activeAudioKey, setActiveAudioKey] = useState(null);
+  const [fullscreenKey, setFullscreenKey] = useState(null);
 
   const handleToggleAudio = (key) => {
     setActiveAudioKey((prev) => (prev === key ? null : key));
+  };
+
+  const handleFullscreenChange = useCallback(() => {
+    if (!document.fullscreenElement) {
+      setFullscreenKey(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, [handleFullscreenChange]);
+
+  const handleEnterFullscreen = (key) => {
+    setFullscreenKey(key);
+    setActiveAudioKey(key);
   };
 
   return (
@@ -25,7 +44,7 @@ export default function TVGrid({ channels, channelCount }) {
       }}
     >
       {visible.map((ch, i) => {
-        const key = ch.name + i;
+        const key = channelKey(ch, i);
         return (
           <ChannelCard
             key={key}
@@ -33,6 +52,8 @@ export default function TVGrid({ channels, channelCount }) {
             style={isFeatured && i === 0 ? { gridColumn: 'span 2', gridRow: 'span 2' } : undefined}
             muted={activeAudioKey !== key}
             onToggleAudio={() => handleToggleAudio(key)}
+            onEnterFullscreen={() => handleEnterFullscreen(key)}
+            isFullscreen={fullscreenKey === key}
           />
         );
       })}

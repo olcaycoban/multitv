@@ -1,15 +1,31 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import YouTubePlayer from './YouTubePlayer';
 import HlsPlayer from './HlsPlayer';
 
-export default function ChannelCard({ channel, style, muted, onToggleAudio }) {
+export default function ChannelCard({ channel, style, muted, onToggleAudio, onEnterFullscreen, isFullscreen }) {
+  const cardRef = useRef(null);
   const [hovered, setHovered] = useState(false);
 
-  const showBtn = hovered || !muted; // hover'da göster, sesi açıksa her zaman göster
+  const showBtn = hovered || !muted || isFullscreen;
+
+  const handleFullscreen = async (e) => {
+    e.stopPropagation();
+    if (document.fullscreenElement === cardRef.current) {
+      await document.exitFullscreen?.();
+      return;
+    }
+    try {
+      await cardRef.current?.requestFullscreen?.();
+      onEnterFullscreen?.();
+    } catch (err) {
+      console.error('Fullscreen failed:', err);
+    }
+  };
 
   return (
     <div
-      className="channel-card"
+      ref={cardRef}
+      className={`channel-card${isFullscreen ? ' channel-card--fullscreen' : ''}`}
       style={style}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -19,9 +35,6 @@ export default function ChannelCard({ channel, style, muted, onToggleAudio }) {
         : <HlsPlayer src={channel.source} name={channel.name} muted={muted} />
       }
 
-      {/* iframe mouse olaylarını yutuyor; overlay sadece hover girişini yakalar.
-          onMouseLeave kasıtlı yok — dış card div'i mouse'un tamamen çıkışını yakalar,
-          böylece butona geçince hovered=false olmuyor. */}
       <div
         style={{
           position: 'absolute', inset: 0, zIndex: 10,
@@ -34,33 +47,61 @@ export default function ChannelCard({ channel, style, muted, onToggleAudio }) {
 
       <div className="channel-label">{channel.name}</div>
 
-      <button
+      <div
         style={{
           position: 'absolute',
           top: 4,
           right: 4,
           zIndex: 9999,
-          width: 28,
-          height: 28,
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: muted ? 'rgba(0,0,0,0.8)' : '#c61d23',
-          border: `1px solid ${muted ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.8)'}`,
-          borderRadius: 5,
-          fontSize: 14,
-          lineHeight: 1,
-          cursor: 'pointer',
-          userSelect: 'none',
+          gap: 4,
           opacity: showBtn ? 1 : 0,
           transition: 'opacity 0.2s',
           pointerEvents: 'all',
         }}
-        onClick={(e) => { e.stopPropagation(); onToggleAudio?.(); }}
-        title={muted ? 'Sesi aç' : 'Sesi kapat'}
       >
-        {muted ? '🔇' : '🔊'}
-      </button>
+        <button
+          style={{
+            width: 28,
+            height: 28,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.8)',
+            border: '1px solid rgba(255,255,255,0.5)',
+            borderRadius: 5,
+            fontSize: 13,
+            lineHeight: 1,
+            cursor: 'pointer',
+            userSelect: 'none',
+            color: '#fff',
+          }}
+          onClick={handleFullscreen}
+          title={isFullscreen ? 'Tam ekrandan çık' : 'Tam ekran'}
+        >
+          {isFullscreen ? '⛶' : '⛶'}
+        </button>
+        <button
+          style={{
+            width: 28,
+            height: 28,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: muted ? 'rgba(0,0,0,0.8)' : '#c61d23',
+            border: `1px solid ${muted ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.8)'}`,
+            borderRadius: 5,
+            fontSize: 14,
+            lineHeight: 1,
+            cursor: 'pointer',
+            userSelect: 'none',
+          }}
+          onClick={(e) => { e.stopPropagation(); onToggleAudio?.(); }}
+          title={muted ? 'Sesi aç' : 'Sesi kapat'}
+        >
+          {muted ? '🔇' : '🔊'}
+        </button>
+      </div>
     </div>
   );
 }

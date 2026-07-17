@@ -1,6 +1,10 @@
 import db from '../../../lib/db';
+import { requireUser } from '../../../lib/auth';
 
 export default async function handler(req, res) {
+  const session = await requireUser(req, res);
+  if (!session) return;
+
   const id = parseInt(req.query.id, 10);
 
   if (req.method === 'PATCH') {
